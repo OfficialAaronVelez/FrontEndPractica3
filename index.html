@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ultra Minimal Weather</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="flex min-h-screen flex-col items-center justify-center gap-8 px-6 text-center">
+      <div class="space-y-2">
+        
+        <p class="text-4xl font-light text-white">What&apos;s the weather?</p>
+      </div>
+
+      <input
+        id="location-input"
+        class="w-full max-w-xs border-b border-slate-600 bg-transparent px-1 py-2 text-center text-lg text-slate-200 placeholder-slate-600 outline-none focus:border-slate-300"
+        type="text"
+        autocomplete="off"
+        placeholder="Enter your city"
+        aria-label="Enter your city or location"
+      />
+
+      <div
+        id="result"
+        class="text-lg text-slate-400 transition-opacity duration-300"
+        aria-live="polite"
+      >
+        Waiting for your location…
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
