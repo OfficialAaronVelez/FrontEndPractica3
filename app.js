@@ -1,6 +1,49 @@
 const input = document.querySelector('#location-input');
 const result = document.querySelector('#result');
 
+const circuit = {
+  state: 'closed',
+  failureCount: 0,
+  openUntil: 0,
+};
+
+function isCircuitOpen() {
+  if (circuit.state !== 'open') return false;
+  if (Date.now() >= circuit.openUntil) {
+    circuit.state = 'closed';
+    circuit.failureCount = 0;
+    return false;
+  }
+  return true;
+}
+
+function recordSuccess() {
+  circuit.failureCount = 0;
+}
+
+function recordFailure() {
+  circuit.failureCount += 1;
+  if (circuit.failureCount >= 3) {
+    circuit.state = 'open';
+    circuit.openUntil = Date.now() + 30000; 
+  }
+}
+
+async function fetchWithRetry(url) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return res;
+      throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      lastError = err;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  throw lastError;
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   input.focus(); 
 });
@@ -10,11 +53,12 @@ input.addEventListener('keydown', async (event) => {
     return;
   }
 
-  const query = input.value.trim();
-  if (!query) {
-    result.textContent = 'Please type a city first.';
+  const query = sanatizeInput(input.value);
+  if (!query || query.length < 2) {
+    result.textContent = 'Please enter at least 2 characters.';
     return;
   }
+
 
   if (!navigator.onLine) {
     result.textContent = 'You appear to be offline. Check your connection.';
@@ -38,47 +82,65 @@ input.addEventListener('keydown', async (event) => {
     `;
   } catch (error) {
     result.textContent = error.message;
+    console.error("Weather APP Error:", error);
   } finally {
     input.value = '';
   }
 });
 
 async function geocode(query) {
+  if (isCircuitOpen()) {
+    throw new Error('Service is currently unavailable. Please try again later.');
+  }
   const { name, hint } = parseLocationQuery(query);
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=10&language=en&format=json`;
   let response;
   try {
-    response = await fetch(url);
+    response = await fetchWithRetry(url);
   } catch (error) {
-    throw new Error('Network error while looking up that location.');
+    throw new Error(`Network error while looking up ${name}.`),
+    recordFailure(),
+    console.error("Geocode Error:", error);
   }
   if (!response.ok) {
-    throw new Error('Location lookup failed.');
+    throw new Error(`Location ${name} lookup failed.`),
+    recordFailure(),
+    console.error("Geocode Error:", error);
   }
 
   const data = await response.json();
   if (!data.results || data.results.length === 0) {
-    throw new Error('Could not find that place.');
+    throw new Error('Could not find that place.'),
+    console.error("Geocode Error:", error);
   }
 
   return pickBestResult(data.results, name, hint);
 }
 
 async function fetchWeather(lat, lon) {
+  if (isCircuitOpen()) {
+    throw new Error('Service is currently unavailable. Please try again later.');
+  }
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
   let response;
   try {
-    response = await fetch(url);
+    response = await fetchWithRetry(url);
   } catch (error) {
-    throw new Error('Network error while fetching weather data.');
+    throw new Error('Network error while fetching weather data.'),
+    recordFailure(),
+    console.error("Fetch Weather Error:", error);
   }
   if (!response.ok) {
-    throw new Error('Weather request failed.');
+    throw new Error('Weather request failed.'),
+    recordFailure(),
+    console.error("Fetch Weather Error:", error);
   }
 
   const data = await response.json();
   if (!data.current_weather) {
-    throw new Error('Weather data unavailable.');
+    throw new Error('Weather data unavailable.'),
+    recordFailure(),
+    console.error("Fetch Weather Error:", error);
   }
   return data;
 }
@@ -141,4 +203,8 @@ function pickBestResult(results, name, hint) {
   });
 
   return rankedCopy[0];
+}
+
+function sanatizeInput(query) {
+  return query.trim().toLowerCase().replace(/[<>]/g, '').slice(0, 100);
 }
